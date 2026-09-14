@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // Dispatch tests: the first word of argv reaches the right handler with the
 // right arguments, and every wrong first word fails in one line that names the
@@ -19,7 +20,7 @@ const { distill } = await import('../src/distill.js');
 const { render } = await import('../src/render.js');
 const { saveSession, sessionFromPage } = await import('../src/session.js');
 
-const bin = new URL('../src/cli.js', import.meta.url).pathname;
+const bin = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 const newsHtml = readFileSync(new URL('./pages/news.html', import.meta.url), 'utf8');
 
 const PROXY_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'];
@@ -198,7 +199,7 @@ test('do without a number, or with one the page does not have, fails in one line
 
 test('the planned commands fail with the same one-line message, naming themselves', () => {
   seed('stubs');
-  for (const args of [['fill', '1', 'hello'], ['submit'], ['submit', '1'], ['back'], ['session', 'ls']]) {
+  for (const args of [['fill', '1', 'hello'], ['submit'], ['submit', '1'], ['back']]) {
     const r = oc([...args, '--session', 'stubs']);
     assert.equal(r.status, 1, args.join(' '));
     assert.equal(r.stdout, '', `${args[0]} printed to stdout`);
@@ -219,4 +220,43 @@ test('flags are accepted anywhere in argv, before or after the command', () => {
   const after = oc(['next', '--session', 'flags']);
   assert.equal(before.status, 0, before.stderr);
   assert.equal(before.stdout, after.stdout);
+});
+
+test('session ls reports nothing saved yet, then names what open saved', () => {
+  const emptyHome = mkdtempSync(join(tmpdir(), 'oc-cli-empty-'));
+  let r = oc(['session', 'ls'], { OC_HOME: emptyHome });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'no saved sessions');
+  seed('first');
+  seed('second');
+  r = oc(['session', 'ls']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^first  https:\/\/example\.test\/news/m);
+  assert.match(r.stdout, /^second  https:\/\/example\.test\/news/m);
+});
+
+test('session rm forgets the saved page and its cookies, by name or --session', () => {
+  seed('droppable');
+  let r = oc(['login', '--cookie', 'sid=abc', '--domain', 'example.com', '--session', 'droppable']);
+  assert.equal(r.status, 0, r.stderr);
+  const pagePath = join(OC_HOME, 'sessions', 'droppable.json');
+  const jarPath = join(OC_HOME, 'sessions', 'droppable.cookies.json');
+  r = oc(['session', 'rm', 'droppable']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), "forgot session 'droppable'");
+  assert.ok(!existsSync(pagePath), 'saved page is gone');
+  assert.ok(!existsSync(jarPath), 'cookie sidecar is gone');
+  seed('viaflag');
+  r = oc(['session', 'rm', '--session', 'viaflag']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(join(OC_HOME, 'sessions', 'viaflag.json')));
+});
+
+test('session rm refuses a name that is a path, session bogus names its usage', () => {
+  const r = oc(['session', 'rm', '../escape']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^oc: invalid session name/);
+  const r2 = oc(['session', 'bogus']);
+  assert.equal(r2.status, 1);
+  assert.match(r2.stderr, /^oc: usage: oc session ls\|rm \[name\]/);
 });

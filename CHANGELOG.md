@@ -5,6 +5,19 @@ Notable changes per release. Releases before 0.4.0 are listed at
 
 ## Unreleased
 
+### Added
+
+- `oc session ls` lists saved sessions (name, url, title) and `oc session rm
+  [name]` forgets one — saved page plus cookies, the same promise `oc logout`
+  makes. State lives in `~/.only-cli` (`%USERPROFILE%\.only-cli` on Windows,
+  `OC_HOME` overrides), so agents can now inspect and drop it without guessing
+  paths.
+- Login docs gained a PowerShell equivalent (`$h | oc login --cookie - ...`),
+  since Windows has no `printf`.
+- The CLI test harness resolves the binary with `fileURLToPath`, so the suite
+  runs on Windows checkouts (`.pathname` breaks on drive-letter paths with
+  spaces).
+
 ### Fixed
 
 - A feed entry's title is now the link to the entry, so `oc do <n>` on a post

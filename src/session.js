@@ -12,7 +12,7 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, chmodSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, chmodSync, unlinkSync, readdirSync, statSync } from 'node:fs';
 
 export const DEFAULT_SESSION = 'default';
 
@@ -190,4 +190,39 @@ export function loadSession(name) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Every saved page on disk, for `oc session ls`. Cookie sidecars
+ * (`<name>.cookies.json`) are not sessions and are skipped. An unreadable
+ * file is still listed by name: `oc session rm` can drop it.
+ * @returns {{name: string, url: string|null, title: string|null, savedAt: string|null, bytes: number|null}[]}
+ */
+export function listSessions() {
+  let files;
+  try {
+    files = readdirSync(sessionDir());
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const file of files) {
+    if (!file.endsWith('.json') || file.endsWith('.cookies.json')) continue;
+    const name = file.slice(0, -'.json'.length);
+    if (!SAFE_NAME.test(name)) continue;
+    const path = join(sessionDir(), file);
+    const info = { name, url: null, title: null, savedAt: null, bytes: null };
+    try {
+      info.bytes = statSync(path).size;
+      const state = JSON.parse(readFileSync(path, 'utf8'));
+      info.url = state?.url ?? null;
+      info.title = state?.title ?? null;
+      info.savedAt = state?.savedAt ?? null;
+    } catch {
+      // listed by name anyway
+    }
+    out.push(info);
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
 }

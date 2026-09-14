@@ -10,7 +10,7 @@ import { nodeSearch } from './nodedocs.js';
 import { rdocSearch } from './rdoc.js';
 import { apiSearch } from './apisearch.js';
 import * as act from './act.js';
-import { DEFAULT_SESSION, assertSafeName, clearSession, loadSession, saveSession, sessionFromPage } from './session.js';
+import { DEFAULT_SESSION, assertSafeName, clearSession, listSessions, loadSession, saveSession, sessionFromPage } from './session.js';
 import { authFailure, sessionExpiredMessage } from './auth.js';
 import {
   loadCookieJar,
@@ -42,7 +42,7 @@ usage: oc <command> [args] [flags]
   back                return to the previous page              (planned)
   login               seed cookies for a session (--cookie, --domain)
   logout [session]    forget a session: its cookies and its saved page
-  session ls|rm       manage saved sessions                    (planned)
+  session ls|rm [name]  list saved sessions, or forget one (page + cookies)
 
 flags:
   --budget <tokens>   tighten or loosen the render budget (default 500,
@@ -365,7 +365,32 @@ async function main() {
     case 'submit': return act.submit(args[0] ? Number(args[0]) : undefined);
     case 'back': return act.back();
     case 'sites': return console.log(listSites());
-    case 'session': throw new act.NotImplemented('session');
+    case 'session': {
+      // Saved sessions accumulate on disk (one JSON per page kept for
+      // do/read/next), so agents can inspect and drop them without guessing
+      // paths under ~/.only-cli. With no name, rm targets --session.
+      const [sub, target] = args;
+      if (sub === 'ls') {
+        const list = listSessions();
+        if (values.json) return console.log(JSON.stringify(list));
+        if (!list.length) return console.log('no saved sessions');
+        for (const s of list) {
+          console.log(`${s.name}${s.url ? `  ${s.url}` : ''}${s.title ? `  (${s.title})` : ''}`);
+        }
+        return;
+      }
+      if (sub === 'rm') {
+        const name = target ? assertSafeName(target) : sessionName;
+        // The saved page can hold text only cookies could reach, so rm drops
+        // the cookies with it: after rm nothing of that login remains, the
+        // same promise 'oc logout' makes.
+        clearSession(name);
+        clearCookieJar(name);
+        if (values.json) return console.log(JSON.stringify({ forgotten: name }));
+        return console.log(`forgot session '${name}'`);
+      }
+      throw new Error(`usage: oc session ls|rm [name]`);
+    }
     default:
       throw new Error(`unknown command '${command}', run oc --help`);
   }
