@@ -88,7 +88,7 @@ oc open https://example.com/dashboard --session work
 oc logout work
 ```
 
-Windows (PowerShell — no `printf`):
+Windows (PowerShell, no `printf`):
 
 ```powershell
 $h = 'session=...; auth=...'

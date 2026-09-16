@@ -111,6 +111,21 @@ const noContent = (url, detail, hint = "; 'oc raw' has the page's markdown if th
   process.exitCode = NO_CONTENT_EXIT;
 };
 
+/**
+ * Forget everything saved under a name, for `oc logout` and `oc session rm`.
+ * The page saved under a name can be the distilled text of a page only the
+ * cookies could reach, so the two go together: after either command nothing
+ * of that login remains. Cookies go first so a failure on the page file never
+ * leaves the credential behind.
+ * @param {string} name
+ * @returns {boolean} whether anything was on disk to forget
+ */
+function forgetSession(name) {
+  const hadJar = clearCookieJar(name);
+  const hadPage = clearSession(name);
+  return hadJar || hadPage;
+}
+
 const LOGIN_USAGE = 'usage: printf %s "session=..." | oc login --cookie - --domain example.com'
   + ' [--expires 1h] [--session name] [--allow-http]';
 
@@ -208,11 +223,7 @@ async function main() {
   }
 
   if (command === 'logout') {
-    const name = args[0] ? assertSafeName(args[0]) : sessionName;
-    clearCookieJar(name);
-    // The page saved under this name can be the distilled text of a page only
-    // the cookies could reach, so logout drops it too.
-    clearSession(name);
+    forgetSession(args[0] ? assertSafeName(args[0]) : sessionName);
     return;
   }
 
@@ -375,17 +386,16 @@ async function main() {
         if (values.json) return console.log(JSON.stringify(list));
         if (!list.length) return console.log('no saved sessions');
         for (const s of list) {
-          console.log(`${s.name}${s.url ? `  ${s.url}` : ''}${s.title ? `  (${s.title})` : ''}`);
+          console.log(`${s.name}${s.url ? `  ${s.url}` : ''}${s.title ? `  (${s.title})` : ''}${s.cookies ? '  [cookies]' : ''}`);
         }
         return;
       }
       if (sub === 'rm') {
         const name = target ? assertSafeName(target) : sessionName;
-        // The saved page can hold text only cookies could reach, so rm drops
-        // the cookies with it: after rm nothing of that login remains, the
-        // same promise 'oc logout' makes.
-        clearSession(name);
-        clearCookieJar(name);
+        // A name nothing was saved under is most likely a typo, and an agent
+        // that reads "forgot session" would move on believing the login is
+        // gone, so rm fails loud instead of succeeding at nothing.
+        if (!forgetSession(name)) throw new Error(`no such session '${name}', run oc session ls`);
         if (values.json) return console.log(JSON.stringify({ forgotten: name }));
         return console.log(`forgot session '${name}'`);
       }

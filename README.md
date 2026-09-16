@@ -124,7 +124,7 @@ oc open https://example.com/dashboard --session work
 oc logout work
 ```
 
-Windows (PowerShell — no `printf` there):
+Windows (PowerShell, no `printf` there):
 
 ```powershell
 $h = 'session=...; auth=...'   # paste from browser devtools
@@ -141,7 +141,7 @@ Seeded cookies are https-only. They almost always come from an https browser ses
 
 Cookies live in a separate sidecar file (`<session>.cookies.json`) under `~/.only-cli/sessions/`, mode `0600`, not in the page-state JSON and never in `--json` output. The default lifetime is one hour (`--expires 1h`), and a jar holds at most 50 cookies so a page cannot bloat it. When cookies expire or the site returns a login page, `oc` says so plainly (exit 2) instead of distilling the login form as content.
 
-`oc logout` forgets the whole session, not just its cookies: a page saved under that name can hold the distilled text of something only the login could reach, so the snapshot goes with the jar. `oc session rm [name]` forgets a session the same way (page plus cookies) without switching to it first, and `oc session ls` lists what is on disk. State lives in `~/.only-cli` (`%USERPROFILE%\.only-cli` on Windows, override with `OC_HOME`), one JSON per session plus search-index caches — delete the directory to start over.
+`oc logout` forgets the whole session, not just its cookies: a page saved under that name can hold the distilled text of something only the login could reach, so the snapshot goes with the jar. `oc session rm [name]` forgets a session the same way (page plus cookies) without switching to it first, and `oc session ls` lists what is on disk (`[cookies]` marks a live jar). State lives in `~/.only-cli` (`%USERPROFILE%\.only-cli` on Windows, override with `OC_HOME`), one JSON per session plus search-index caches. Delete the directory to start over.
 
 `oc open` remembers the page it rendered in a JSON file per session under `~/.only-cli` (override with `OC_HOME`), so `oc do 3` follows `[3]` without the agent ever handling a URL. A result title on a search page is a link, so `oc do` on it opens the result rather than repeating the title. Pages longer than the budget say what they left out; `oc find`, `oc read <n>`, and `oc next` read the rest without refetching the page, and a `find` with a single match prints that region instead of the number to read it with. The budget is a target rather than a hard cap: a page that would only run a little long is printed whole rather than cut, since one extra tool call costs far more than the tokens it would have saved.
 

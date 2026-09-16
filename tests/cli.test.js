@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -235,6 +235,32 @@ test('session ls reports nothing saved yet, then names what open saved', () => {
   assert.match(r.stdout, /^second  https:\/\/example\.test\/news/m);
 });
 
+test('session ls lists a login that never opened a page, and marks which sessions hold cookies', () => {
+  // 'oc login' writes a jar and no page. That jar is a live credential, so a
+  // listing that only knew about pages would tell an agent auditing leftover
+  // logins that there are none.
+  const home = mkdtempSync(join(tmpdir(), 'oc-cli-jar-'));
+  let r = oc(['login', '--cookie', 'sid=abc', '--domain', 'example.com', '--session', 'jaronly'], { OC_HOME: home });
+  assert.equal(r.status, 0, r.stderr);
+  r = oc(['session', 'ls'], { OC_HOME: home });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'jaronly  [cookies]');
+  r = oc(['session', 'ls', '--json'], { OC_HOME: home });
+  assert.deepEqual(JSON.parse(r.stdout).map((s) => [s.name, s.cookies]), [['jaronly', true]]);
+});
+
+test('session ls skips files oc could not have written, so it never lists what rm cannot remove', () => {
+  const home = mkdtempSync(join(tmpdir(), 'oc-cli-stray-'));
+  const dir = join(home, 'sessions');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '..json'), '{}');
+  writeFileSync(join(dir, 'notes.txt'), '');
+  mkdirSync(join(dir, 'folder.json'));
+  const r = oc(['session', 'ls'], { OC_HOME: home });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'no saved sessions');
+});
+
 test('session rm forgets the saved page and its cookies, by name or --session', () => {
   seed('droppable');
   let r = oc(['login', '--cookie', 'sid=abc', '--domain', 'example.com', '--session', 'droppable']);
@@ -252,10 +278,19 @@ test('session rm forgets the saved page and its cookies, by name or --session', 
   assert.ok(!existsSync(join(OC_HOME, 'sessions', 'viaflag.json')));
 });
 
-test('session rm refuses a name that is a path, session bogus names its usage', () => {
-  const r = oc(['session', 'rm', '../escape']);
+test('session rm of a name nothing is saved under fails instead of claiming success', () => {
+  const r = oc(['session', 'rm', 'wrok']);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /^oc: invalid session name/);
+  assert.equal(r.stdout, '');
+  assert.equal(r.stderr.trim(), "oc: no such session 'wrok', run oc session ls");
+});
+
+test('session rm refuses a name that is a path or a cookie sidecar, session bogus names its usage', () => {
+  for (const name of ['../escape', 'work.cookies']) {
+    const r = oc(['session', 'rm', name]);
+    assert.equal(r.status, 1, name);
+    assert.match(r.stderr, /^oc: invalid session name/);
+  }
   const r2 = oc(['session', 'bogus']);
   assert.equal(r2.status, 1);
   assert.match(r2.stderr, /^oc: usage: oc session ls\|rm \[name\]/);
